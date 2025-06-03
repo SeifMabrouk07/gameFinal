@@ -15,11 +15,11 @@ public class SlimeController : MonoBehaviour
     [Header("Detection & Attack Settings")]
     [Tooltip("Distance at which the slime sees and stops patrolling")]
     public float detectRange = 3f;
-    [Tooltip("Radius for melee hit detection (OverlapCircle)")]
+    [Tooltip("Radius for melee hit detection")]
     public float attackRange = 0.5f;
     [Tooltip("Seconds between consecutive attacks")]
     public float attackCooldown = 1f;
-    [Tooltip("Damage dealt to player on contact")]
+    [Tooltip("Damage dealt to the player")]
     public int damageToPlayer = 1;
     [Tooltip("Which layer(s) count as the player")]
     public LayerMask playerLayer;
@@ -32,7 +32,6 @@ public class SlimeController : MonoBehaviour
     [Tooltip("Idle time before flipping direction on patrol")]
     public float turnIdleTime = 0.25f;
 
-    // Components & state
     Rigidbody2D rb;
     Animator anim;
     Collider2D bodyCollider;
@@ -52,10 +51,10 @@ public class SlimeController : MonoBehaviour
         bodyCollider = GetComponent<Collider2D>();
         currentHealth = maxHealth;
 
-        // Kinematic so we drive movement in code
+        // Drive movement by code
         rb.bodyType = RigidbodyType2D.Kinematic;
 
-        // Attempt to find the player by tag (ensure your Player is tagged "Player")
+        // Find the player by tag; ensure your Player GameObject is tagged "Player"
         GameObject playerGO = GameObject.FindGameObjectWithTag("Player");
         if (playerGO != null)
             playerTransform = playerGO.transform;
@@ -69,7 +68,7 @@ public class SlimeController : MonoBehaviour
         if (currentHealth <= 0)
             return;
 
-        // If currently attacking or turning, skip detection/chase
+        // If attacking or turning, skip detection/chase
         if (isAttacking || isTurning)
             return;
 
@@ -77,18 +76,15 @@ public class SlimeController : MonoBehaviour
         {
             float dist = Vector2.Distance(transform.position, playerTransform.position);
 
-            // If inside detectRange, either chase or attempt attack
             if (dist <= detectRange)
             {
-                Debug.Log("Slime: Player detected at distance " + dist.ToString("F2"));
-
-                // Face toward player
+                // Face the player
                 if (playerTransform.position.x > transform.position.x && !movingRight)
                     Flip();
                 else if (playerTransform.position.x < transform.position.x && movingRight)
                     Flip();
 
-                // First, check OverlapCircle for attackRange
+                // Check if player inside attackRange via OverlapCircle
                 Collider2D[] hits = Physics2D.OverlapCircleAll(
                     transform.position + Vector3.up * 0.2f,
                     attackRange,
@@ -97,20 +93,19 @@ public class SlimeController : MonoBehaviour
 
                 if (hits.Length > 0 && Time.time - lastAttackTime >= attackCooldown)
                 {
-                    // If the player’s Collider is in the attack circle and cooldown passed, attack:
-                    Debug.Log("Slime: Player within attackRange, starting PerformAttack()");
+                    // Player in melee range: attack
                     StartCoroutine(PerformAttack());
                     return;
                 }
                 else if (hits.Length > 0)
                 {
-                    // Player is inside attackRange but cooldown not yet passed: stay Idle
+                    // Player is inside attackRange but still on cooldown: stay Idle
                     anim.SetBool("Run", false);
                     return;
                 }
                 else
                 {
-                    // Player not yet inside attackRange (but within detectRange): chase
+                    // Player in detectRange but outside attackRange: chase
                     anim.SetBool("Run", true);
                     ChasePlayer();
                     return;
@@ -118,7 +113,7 @@ public class SlimeController : MonoBehaviour
             }
         }
 
-        // Otherwise, player is outside detectRange (or not assigned): patrol
+        // Outside detectRange: patrol
         Patrol();
     }
 
@@ -155,7 +150,6 @@ public class SlimeController : MonoBehaviour
 
     void ChasePlayer()
     {
-        // Move horizontally toward player's x‐position only
         float step = moveSpeed * Time.deltaTime;
         Vector3 pos = transform.position;
 
@@ -186,41 +180,34 @@ public class SlimeController : MonoBehaviour
         isAttacking = true;
         anim.SetBool("Run", false);
 
-        // Pick one of "Attack", "Attack2", "Attack3" at random
-        int r = Random.Range(1, 4);
-        string triggerName = (r == 1) ? "Attack" : (r == 2) ? "Attack2" : "Attack3";
-        Debug.Log("Slime: Triggering animation " + triggerName);
-        anim.SetTrigger(triggerName);
+        // Trigger the attack animation (Enemy Attack1 state)
+        anim.SetTrigger("Attack");
 
-        // Wait one frame so Animator actually enters that attack state
+        // Wait one frame for Animator to enter the attack state
         yield return null;
 
-        // Determine the length of the current animation clip
+        // Get the current clip length
         AnimatorClipInfo[] clips = anim.GetCurrentAnimatorClipInfo(0);
         float clipLength = (clips.Length > 0) ? clips[0].clip.length : 0.5f;
         float hitDelay = clipLength * 0.3f;
         yield return new WaitForSeconds(hitDelay);
 
-        // On the “hit frame,” do another OverlapCircle just in case
+        // On the “hit frame,” do an OverlapCircle to damage the player if still in range
         Collider2D[] hits = Physics2D.OverlapCircleAll(
             transform.position + Vector3.up * 0.2f,
             attackRange,
             playerLayer
         );
-        if (hits.Length > 0)
-            Debug.Log("Slime: Player hit detected in PerformAttack()");
-
         foreach (var hit in hits)
         {
-            PlayerMovement pm = hit.GetComponent<PlayerMovement>();
-            if (pm != null)
+            PlayerHealth ph = hit.GetComponent<PlayerHealth>();
+            if (ph != null)
             {
-                Debug.Log("Slime: Calling Player.TakeDamage(" + damageToPlayer + ")");
-                pm.TakeDamage(damageToPlayer);
+                ph.TakeDamage(damageToPlayer);
             }
         }
 
-        // Wait out the rest of the attack clip
+        // Wait out the remainder of the attack clip
         yield return new WaitForSeconds(clipLength - hitDelay);
 
         lastAttackTime = Time.time;
@@ -240,7 +227,6 @@ public class SlimeController : MonoBehaviour
         currentHealth -= amount;
         if (currentHealth > 0)
         {
-            Debug.Log("Slime: Took damage, playing Hit");
             anim.SetTrigger("Hit");
         }
         else
@@ -251,7 +237,6 @@ public class SlimeController : MonoBehaviour
 
     void Die()
     {
-        Debug.Log("Slime: Dying");
         currentHealth = 0;
         anim.SetBool("Run", false);
         anim.SetTrigger("Death");
@@ -260,6 +245,7 @@ public class SlimeController : MonoBehaviour
         StopAllCoroutines();
         isAttacking = false;
 
+        // Destroy after death animation finishes
         AnimatorClipInfo[] clips = anim.GetCurrentAnimatorClipInfo(0);
         float dieLength = (clips.Length > 0) ? clips[0].clip.length : 0.5f;
         StartCoroutine(DestroyAfterDelay(dieLength));
@@ -283,15 +269,15 @@ public class SlimeController : MonoBehaviour
 
     void OnDrawGizmosSelected()
     {
-        // Visualize detect range (blue)
+        // Detect range (blue)
         Gizmos.color = Color.blue;
         Gizmos.DrawWireSphere(transform.position, detectRange);
 
-        // Visualize attack range (red)
+        // Attack range (red)
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(transform.position + Vector3.up * 0.2f, attackRange);
 
-        // Visualize patrol boundaries (yellow)
+        // Patrol boundaries (yellow)
         Gizmos.color = Color.yellow;
         Gizmos.DrawLine(
             new Vector3(leftX, transform.position.y, 0f),

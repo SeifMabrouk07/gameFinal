@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -40,20 +39,12 @@ public class PlayerMovement : MonoBehaviour
     [Range(0f, 1f)]
     public float hitTimeFraction = 0.3f;
 
-    [Header("Health Settings")]
-    [Tooltip("Max hit points of the player")]
-    public int maxHealth = 3;
-
-    // Public event: subscribers can listen to health changes.
-    // int parameters: (currentHP, maxHP)
-    public event Action<int, int> OnHealthChanged;
-
     Rigidbody2D rb;
     Animator anim;
-    Collider2D bodyCollider;
 
     // Movement / jump
-    float horizontalInput;
+    float rawHorizontalInput;      // from keyboard/joystick
+    float horizontalInput;         // final value (overridden by UI holds)
     bool jumpRequested;
     bool isGrounded;
     bool facingRight = true;
@@ -61,21 +52,20 @@ public class PlayerMovement : MonoBehaviour
     // Combo‐attack state
     Queue<string> attackQueue = new Queue<string>();
     Coroutine comboRoutine;
-    [HideInInspector] public bool isAttacking = false;
-    int nextComboStep;
-    float lastAttackTime;
+    public bool isAttacking = false;
+    int nextComboStep = 0;
+    float lastAttackTime = -10f;
 
-    // Health state
-    int currentHealth;
-    bool isDead = false;
+    // Mobile touch flags
+    bool _holdingLeft = false;
+    bool _holdingRight = false;
 
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
         anim = GetComponent<Animator>();
-        bodyCollider = GetComponent<Collider2D>();
 
-        // Auto‐create a groundCheck child at feet if none assigned
+        // Auto‐create groundCheck if null
         if (groundCheck == null)
         {
             Collider2D col = GetComponent<Collider2D>();
@@ -86,7 +76,7 @@ public class PlayerMovement : MonoBehaviour
             groundCheck = go.transform;
         }
 
-        // Auto‐create an attackPoint child if none assigned
+        // Auto‐create attackPoint if null
         if (attackPoint == null)
         {
             var go = new GameObject("AttackPoint_Auto");
@@ -99,23 +89,11 @@ public class PlayerMovement : MonoBehaviour
         rb.bodyType = RigidbodyType2D.Dynamic;
         if (rb.gravityScale <= 0f) rb.gravityScale = 1f;
         rb.constraints = RigidbodyConstraints2D.FreezeRotation;
-
-        // Initialize combo state
-        nextComboStep = 0;
-        lastAttackTime = -10f;
-
-        // Initialize health
-        currentHealth = maxHealth;
-        // Immediately fire the event so UI can show starting hearts
-        OnHealthChanged?.Invoke(currentHealth, maxHealth);
     }
 
     void Update()
     {
-        if (isDead)
-            return;
-
-        // 1) Ground check each frame
+        // 1) Ground check
         isGrounded = Physics2D.OverlapCircle(
             groundCheck.position,
             groundCheckRadius,
@@ -123,57 +101,39 @@ public class PlayerMovement : MonoBehaviour
         );
         anim.SetBool("grounded", isGrounded);
 
-        // 2) Read horizontal input (only if not mid‐attack)
-        horizontalInput = isAttacking ? 0f : Input.GetAxisRaw("Horizontal");
+        // 2) Read raw horizontal input (keyboard/joystick)
+        rawHorizontalInput = Input.GetAxisRaw("Horizontal");
 
-        // 3) Jump input (only if grounded & not attacking)
-        if (Input.GetButtonDown("Jump") && isGrounded && !isAttacking)
-        {
-            anim.CrossFadeInFixedTime(
-                Animator.StringToHash("Jump"),
-                transitionDuration, 0, 0f
-            );
-            jumpRequested = true;
-            isGrounded = false;
-            anim.SetBool("grounded", false);
-            AbortCombo();
-        }
+        // 3) Determine final horizontalInput:
+        //    - If holding left/right button, override rawInput
+        //    - Else, use rawInput
+        if (_holdingLeft)        horizontalInput = -1f;
+        else if (_holdingRight)  horizontalInput =  1f;
+        else                     horizontalInput =  rawHorizontalInput;
 
-        // 4) Attack input (anytime)
-        if (Input.GetButtonDown("Fire1") && !isDead)
-        {
-            // Reset combo if too slow
-            if (Time.time - lastAttackTime > comboResetTime)
-                nextComboStep = 0;
-
-            // Enqueue next attack trigger
-            attackQueue.Enqueue(attackTriggers[nextComboStep]);
-            lastAttackTime = Time.time;
-            nextComboStep = (nextComboStep + 1) % attackTriggers.Length;
-
-            // If not already attacking, start processing
-            if (!isAttacking)
-                comboRoutine = StartCoroutine(ProcessAttackQueue());
-        }
-
-        // 5) Run animation: only when grounded, moving, and not attacking
+        // 4) Run animation: only if grounded, moving, and not attacking
         bool running = isGrounded && Mathf.Abs(horizontalInput) > 0.01f && !isAttacking;
         anim.SetBool("Run", running);
 
-        // 6) Flip sprite if needed (only if not attacking)
+        // 5) Flip sprite if moving left/right and not attacking
         if (!isAttacking)
         {
             if (horizontalInput > 0.01f && !facingRight) Flip();
-            if (horizontalInput < -0.01f && facingRight) Flip();
+            else if (horizontalInput < -0.01f && facingRight) Flip();
         }
+
+        // 6) Handle keyboard jump
+        if (Input.GetButtonDown("Jump") && isGrounded && !isAttacking)
+        {
+            Jump();
+        }
+
+        // (KEYBOARD ATTACK REMOVED HERE—only mobile button will call EnqueueAttack())
     }
 
     void FixedUpdate()
     {
-        if (isDead)
-            return;
-
-        // 1) Apply jump
+        // 1) If jump was requested
         if (jumpRequested)
         {
             rb.velocity = new Vector2(rb.velocity.x, jumpVelocity);
@@ -185,6 +145,39 @@ public class PlayerMovement : MonoBehaviour
         rb.velocity = new Vector2(vx, rb.velocity.y);
     }
 
+    // Public method to call from “Jump” button’s OnClick
+    public void Jump()
+    {
+        if (isGrounded && !isAttacking)
+        {
+            anim.CrossFadeInFixedTime(
+                Animator.StringToHash("Jump"),
+                transitionDuration, 0, 0f
+            );
+            jumpRequested = true;
+            isGrounded = false;
+            anim.SetBool("grounded", false);
+            AbortCombo();
+        }
+    }
+
+    // Public method for Attack button’s OnClick
+    public void EnqueueAttack()
+    {
+        if (isAttacking) return;
+
+        // Reset combo if too slow
+        if (Time.time - lastAttackTime > comboResetTime)
+            nextComboStep = 0;
+
+        attackQueue.Enqueue(attackTriggers[nextComboStep]);
+        lastAttackTime = Time.time;
+        nextComboStep = (nextComboStep + 1) % attackTriggers.Length;
+
+        if (!isAttacking)
+            comboRoutine = StartCoroutine(ProcessAttackQueue());
+    }
+
     IEnumerator ProcessAttackQueue()
     {
         isAttacking = true;
@@ -194,42 +187,35 @@ public class PlayerMovement : MonoBehaviour
             string trig = attackQueue.Dequeue();
             int hash = Animator.StringToHash(trig);
 
-            // 1) Cross‐fade into the attack animation
+            // Cross-fade into attack animation
             anim.CrossFadeInFixedTime(hash, transitionDuration, 0, 0f);
 
-            // 2) Wait one frame for Animator to switch states
+            // Wait one frame so Animator enters that state
             yield return null;
 
-            // 3) Grab the current clip length from Animator
+            // Grab the current clip length
             AnimatorClipInfo[] clips = anim.GetCurrentAnimatorClipInfo(0);
-            float clipLength = 0.5f; // fallback length
-            if (clips.Length > 0)
-                clipLength = clips[0].clip.length;
-
-            // 4) Wait until "hit frame" (fraction of clip)
+            float clipLength = (clips.Length > 0) ? clips[0].clip.length : 0.5f;
             float hitDelay = clipLength * hitTimeFraction;
             yield return new WaitForSeconds(hitDelay);
 
-            // 5) Deal damage to all enemies in range
+            // Damage all enemies in range
             Collider2D[] hits = Physics2D.OverlapCircleAll(
                 attackPoint.position,
                 attackRange,
                 enemyLayer
             );
-            foreach (var hit in hits)
+            foreach (var h in hits)
             {
-                SlimeController sc = hit.GetComponent<SlimeController>();
+                SlimeController sc = h.GetComponent<SlimeController>();
                 if (sc != null)
-                {
                     sc.TakeDamage(damageToEnemy);
-                }
             }
 
-            // 6) Wait the remainder of the clip
+            // Wait remainder of animation
             yield return new WaitForSeconds(clipLength - hitDelay);
         }
 
-        // 7) Reset combo state so player can move again
         isAttacking = false;
         comboRoutine = null;
         attackQueue.Clear();
@@ -247,93 +233,32 @@ public class PlayerMovement : MonoBehaviour
         nextComboStep = 0;
     }
 
-    #region Damage & Death
-
-    // Call this when the slime hits the player, or from other damage sources
-    public void TakeDamage(int amount)
-    {
-        if (isDead)
-            return;
-
-        currentHealth = Mathf.Max(currentHealth - amount, 0);
-        OnHealthChanged?.Invoke(currentHealth, maxHealth);
-
-        if (currentHealth <= 0)
-        {
-            Die();
-        }
-        else
-        {
-            // Optionally play a “Hurt” animation:
-            // anim.SetTrigger("Hurt");
-        }
-    }
-
-    void Die()
-    {
-        isDead = true;
-        anim.SetBool("Run", false);
-        anim.SetTrigger("Die"); // matches your “Die” parameter
-
-        // Disable collider so no further hits can register
-        bodyCollider.enabled = false;
-
-        // Stop all movement/combos
-        StopAllCoroutines();
-        isAttacking = false;
-
-        // Destroy after Die animation finishes
-        AnimatorClipInfo[] clips = anim.GetCurrentAnimatorClipInfo(0);
-        float dieLength = 0.5f;
-        if (clips.Length > 0)
-            dieLength = clips[0].clip.length;
-
-        StartCoroutine(DestroyAfterDelay(dieLength));
-    }
-
-    IEnumerator DestroyAfterDelay(float delay)
-    {
-        yield return new WaitForSeconds(delay);
-        Destroy(gameObject);
-    }
-
-    #endregion
-
     void Flip()
     {
         facingRight = !facingRight;
         Vector3 s = transform.localScale;
         s.x *= -1f;
         transform.localScale = s;
-
-        // If the attackPoint was auto‐created, keep it in front
-        if (attackPoint.name.Contains("AttackPoint_Auto"))
-        {
-            Vector3 ap = attackPoint.localPosition;
-            ap.x = -ap.x;
-            attackPoint.localPosition = ap;
-        }
     }
 
     void OnDrawGizmos()
     {
-        // Draw ground‐check circle
         if (groundCheck != null)
         {
             Gizmos.color = Color.yellow;
-            Gizmos.DrawWireSphere(
-                groundCheck.position,
-                groundCheckRadius
-            );
+            Gizmos.DrawWireSphere(groundCheck.position, groundCheckRadius);
         }
-        // Draw player attack range circle
         if (attackPoint != null)
         {
             Gizmos.color = Color.red;
-            Gizmos.DrawWireSphere(
-                attackPoint.position,
-                attackRange
-            );
+            Gizmos.DrawWireSphere(attackPoint.position, attackRange);
         }
     }
+
+    // These will be wired to the Left/Right buttons via an EventTrigger component
+    public void OnLeftButtonDown()  { _holdingLeft = true;  }
+    public void OnLeftButtonUp()    { _holdingLeft = false; }
+
+    public void OnRightButtonDown() { _holdingRight = true; }
+    public void OnRightButtonUp()   { _holdingRight = false; }
 }

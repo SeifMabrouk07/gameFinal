@@ -1,72 +1,60 @@
-﻿// HealthUIManager.cs
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UI;
 using System.Collections.Generic;
 
 public class HealthUIManager : MonoBehaviour
 {
-    [Header("Assign at Runtime or in Inspector")]
-    [Tooltip("Drag in the HeartIcon prefab here")]
+    [Header("UI References")]
+    [Tooltip("Prefab for a single heart icon (Image)")]
     public GameObject heartIconPrefab;
-
-    [Tooltip("Drag in your PlayerHealth component (e.g. the Player GameObject)")]
+    [Tooltip("PlayerHealth component reference")]
     public PlayerHealth playerHealth;
-
-    [Tooltip("Parent object under the Canvas where hearts will appear")]
+    [Tooltip("Parent transform (must have a Horizontal Layout Group)")]
     public Transform heartsContainer;
 
-    // Keep track of the instantiated heart icons
     List<Image> heartIcons = new List<Image>();
 
     void Start()
     {
         if (playerHealth == null)
         {
-            Debug.LogError("HealthUIManager: PlayerHealth not assigned!", this);
+            Debug.LogError("HealthUIManager: PlayerHealth not assigned!");
             return;
         }
 
         if (heartIconPrefab == null)
         {
-            Debug.LogError("HealthUIManager: heartIconPrefab not assigned!", this);
+            Debug.LogError("HealthUIManager: heartIconPrefab not assigned!");
             return;
         }
 
         if (heartsContainer == null)
         {
-            Debug.LogError("HealthUIManager: heartsContainer not assigned!", this);
+            Debug.LogError("HealthUIManager: heartsContainer not assigned!");
             return;
         }
 
-        // Subscribe to health changes
+        // Subscribe to health‐changed event
         playerHealth.OnHealthChanged += UpdateHeartsDisplay;
 
-        // Build initial heart icons equal to maxHP
-        for (int i = 0; i < playerHealth.maxHP; i++)
+        // Instantiate one heart for each maxHealth
+        for (int i = 0; i < playerHealth.maxHealth; i++)
         {
             GameObject go = Instantiate(heartIconPrefab, heartsContainer);
-            // Ensure the instantiated object is an Image
             Image img = go.GetComponent<Image>();
             if (img != null)
-            {
                 heartIcons.Add(img);
-            }
             else
-            {
-                Debug.LogError("HeartIcon prefab doesn't have an Image component on the root!", go);
-            }
+                Debug.LogError("HeartIconPrefab has no Image component!");
         }
 
-        // Immediately set the correct initial visibility
-        UpdateHeartsDisplay(playerHealth.currentHP, playerHealth.maxHP);
+        // Initialize display (in case OnHealthChanged didn't fire in Awake)
+        UpdateHeartsDisplay(playerHealth.currentHealth, playerHealth.maxHealth);
     }
 
     void UpdateHeartsDisplay(int currentHP, int maxHP)
     {
-        // If maxHP ever changes, we could resize the list, but
-        // here we assume maxHP is fixed at Start.
-
-        // Loop over each icon: if its index < currentHP, show it, otherwise hide it
+        // If maxHP changes at runtime, you should resize heartIcons list.
         for (int i = 0; i < heartIcons.Count; i++)
         {
             heartIcons[i].enabled = (i < currentHP);
@@ -75,7 +63,6 @@ public class HealthUIManager : MonoBehaviour
 
     void OnDestroy()
     {
-        // Unsubscribe from the event to avoid null‐refs in editor / playmode exit
         if (playerHealth != null)
             playerHealth.OnHealthChanged -= UpdateHeartsDisplay;
     }
