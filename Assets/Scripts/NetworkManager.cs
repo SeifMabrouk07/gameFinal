@@ -1,40 +1,14 @@
+﻿using UnityEngine;
+using Proyecto26;           // RestClient + RequestException
 using System;
-using System.Collections;
-using UnityEngine;
-using UnityEngine.Networking;
-
-[Serializable]
-public class AuthResponse
-{
-    public int id;
-    public string username;
-}
-
-[Serializable]
-public class ErrorResponse
-{
-    public string error;
-}
-
-[Serializable]
-public class UserData
-{
-    public int id;
-    public string username;
-    public int score;
-}
-
-[Serializable]
-class MessageResponse
-{
-    public string message;
-}
+using UnityEngine.SceneManagement;
 
 public class NetworkManager : MonoBehaviour
 {
     public static NetworkManager Instance { get; private set; }
 
     [Header("Server Settings")]
+    [Tooltip("Point this at your Node.js server (e.g. http://localhost:3000)")]
     public string BaseUrl = "http://localhost:3000";
 
     void Awake()
@@ -44,137 +18,90 @@ public class NetworkManager : MonoBehaviour
             Instance = this;
             DontDestroyOnLoad(gameObject);
         }
-        else
-            Destroy(gameObject);
+        else Destroy(gameObject);
     }
 
-    // --------- PUBLIC API ---------
+    // ─── Payload / Response DTOs ─────────────────────────────────────────
 
+    [Serializable]
+    public class RegisterRequest { public string username; public string password; }
+    [Serializable]
+    public class RegisterResponse { public int id; public string username; }
+
+    [Serializable]
+    public class LoginRequest { public string username; public string password; }
+    [Serializable]
+    public class LoginResponse { public int id; public string username; }
+
+    [Serializable]
+    public class ProgressRequest { public int userId; public int level; public float percent; }
+    [Serializable]
+    public class ProgressResponse { public float bestPercent; }
+
+    // ─── Authentication ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Register a new user.
+    /// </summary>
     public void Register(string username, string password, Action<bool, string> callback)
-        => StartCoroutine(_Register(username, password, callback));
+    {
+        var req = new RegisterRequest { username = username, password = password };
+        RestClient
+          .Post<RegisterResponse>($"{BaseUrl}/register", req)
+          .Then(res => callback(true, $"Welcome, {res.username}!"))
+          .Catch(err =>
+          {
+              var re = err as RequestException;
+              if (re != null && re.StatusCode == 409)
+                  callback(false, "Username already taken.");
+              else
+                  callback(false, $"Error: {err.Message}");
+          });
+    }
 
+    /// <summary>
+    /// Login an existing user.
+    /// </summary>
     public void Login(string username, string password, Action<bool, string, int> callback)
-        => StartCoroutine(_Login(username, password, callback));
-
-    public void GetUser(int userId, Action<bool, string, UserData> callback)
-        => StartCoroutine(_GetUser(userId, callback));
-
-    public void UpdateScore(int userId, int newScore, Action<bool, string> callback)
-        => StartCoroutine(_UpdateScore(userId, newScore, callback));
-
-    public void DeleteUser(int userId, Action<bool, string> callback)
-        => StartCoroutine(_DeleteUser(userId, callback));
-
-    // --------- COROUTINES ---------
-
-    IEnumerator _Register(string username, string password, Action<bool, string> cb)
     {
-        var payload = JsonUtility.ToJson(new { username, password });
-        using var www = new UnityWebRequest($"{BaseUrl}/register", "POST");
-        byte[] body = System.Text.Encoding.UTF8.GetBytes(payload);
-        www.uploadHandler = new UploadHandlerRaw(body);
-        www.downloadHandler = new DownloadHandlerBuffer();
-        www.SetRequestHeader("Content-Type", "application/json");
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success)
-        {
-            var err = TryParseError(www.downloadHandler.text);
-            cb(false, err);
-        }
-        else cb(true, "Registration successful");
+        var req = new LoginRequest { username = username, password = password };
+        RestClient
+          .Post<LoginResponse>($"{BaseUrl}/login", req)
+          .Then(res => callback(true, null, res.id))
+          .Catch(err =>
+          {
+              var re = err as RequestException;
+              if (re != null && re.StatusCode == 401)
+                  callback(false, "Invalid username or password.", -1);
+              else if (re != null && re.StatusCode == 400)
+                  callback(false, "Username and password required.", -1);
+              else
+                  callback(false, $"Error: {err.Message}", -1);
+          });
     }
 
-    IEnumerator _Login(string username, string password, Action<bool, string, int> cb)
-    {
-        var payload = JsonUtility.ToJson(new { username, password });
-        using var www = new UnityWebRequest($"{BaseUrl}/login", "POST");
-        byte[] body = System.Text.Encoding.UTF8.GetBytes(payload);
-        www.uploadHandler = new UploadHandlerRaw(body);
-        www.downloadHandler = new DownloadHandlerBuffer();
-        www.SetRequestHeader("Content-Type", "application/json");
-        yield return www.SendWebRequest();
+    // ─── Progression ────────────────────────────────────────────────────
 
-        if (www.result != UnityWebRequest.Result.Success)
-        {
-            var err = TryParseError(www.downloadHandler.text);
-            cb(false, err, -1);
-        }
-        else
-        {
-            var auth = JsonUtility.FromJson<AuthResponse>(www.downloadHandler.text);
-            cb(true, "Login successful", auth.id);
-        }
+    /// <summary>
+    /// Gets the bestPercent for a given user & level.
+    /// </summary>
+    public void GetProgress(int userId, int level, Action<bool, string, float> callback)
+    {
+        RestClient
+          .Get<ProgressResponse>($"{BaseUrl}/progress/{userId}/{level}")
+          .Then(res => callback(true, null, res.bestPercent))
+          .Catch(err => callback(false, err.Message, 0f));
     }
 
-    IEnumerator _GetUser(int userId, Action<bool, string, UserData> cb)
+    /// <summary>
+    /// Uploads this run’s percent; server will keep the max.
+    /// </summary>
+    public void UpdateProgress(int userId, int level, float percent, Action<bool, string, float> callback)
     {
-        using var www = UnityWebRequest.Get($"{BaseUrl}/user/{userId}");
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success)
-        {
-            var err = TryParseError(www.downloadHandler.text);
-            cb(false, err, null);
-        }
-        else
-        {
-            var user = JsonUtility.FromJson<UserData>(www.downloadHandler.text);
-            cb(true, "User data retrieved", user);
-        }
-    }
-
-    IEnumerator _UpdateScore(int userId, int newScore, Action<bool, string> cb)
-    {
-        var payload = JsonUtility.ToJson(new { id = userId, score = newScore });
-        using var www = new UnityWebRequest($"{BaseUrl}/update-score", "PUT");
-        byte[] body = System.Text.Encoding.UTF8.GetBytes(payload);
-        www.uploadHandler = new UploadHandlerRaw(body);
-        www.downloadHandler = new DownloadHandlerBuffer();
-        www.SetRequestHeader("Content-Type", "application/json");
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success)
-        {
-            var err = TryParseError(www.downloadHandler.text);
-            cb(false, err);
-        }
-        else
-        {
-            var msg = JsonUtility.FromJson<MessageResponse>(www.downloadHandler.text);
-            cb(true, msg.message);
-        }
-    }
-
-    IEnumerator _DeleteUser(int userId, Action<bool, string> cb)
-    {
-        using var www = UnityWebRequest.Delete($"{BaseUrl}/user/{userId}");
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success)
-        {
-            var err = TryParseError(www.downloadHandler.text);
-            cb(false, err);
-        }
-        else
-        {
-            var msg = JsonUtility.FromJson<MessageResponse>(www.downloadHandler.text);
-            cb(true, msg.message);
-        }
-    }
-
-    // --------- HELPERS ---------
-
-    string TryParseError(string json)
-    {
-        try
-        {
-            var e = JsonUtility.FromJson<ErrorResponse>(json);
-            return e.error ?? "Unknown error";
-        }
-        catch
-        {
-            return "Server error";
-        }
+        var req = new ProgressRequest { userId = userId, level = level, percent = percent };
+        RestClient
+          .Put<ProgressResponse>($"{BaseUrl}/progress", req)
+          .Then(res => callback(true, null, res.bestPercent))
+          .Catch(err => callback(false, err.Message, percent));
     }
 }

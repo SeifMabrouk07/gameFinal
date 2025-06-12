@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.SceneManagement;  // if your progression manager loads scenes
 
 [RequireComponent(typeof(Collider2D))]
 public class PlayerHealth : MonoBehaviour
@@ -47,27 +48,48 @@ public class PlayerHealth : MonoBehaviour
         isDead = true;
 
         Debug.Log("PlayerHealth: Player died");
-        // Play any death animation or trigger here, e.g.:
+
+        // 1) Hook into level progression: signal end of level (death counts)
+        var lvlProg = FindObjectOfType<LevelProgressionManager>();
+        if (lvlProg != null)
+        {
+            // This will compute run% and upload, then load LevelComplete scene
+            lvlProg.OnLevelEnd();
+        }
+        else
+        {
+            // Fallback: if no progression manager found, just load a game-over or main menu
+            SceneManager.LoadScene("LevelComplete");
+        }
+
+        // 2) Play any death animation or trigger here
         Animator anim = GetComponent<Animator>();
         if (anim != null)
             anim.SetTrigger("Die");
 
-        // Optionally disable movement/collision, etc.
+        // 3) Disable further interaction
         GetComponent<Collider2D>().enabled = false;
         var pm = GetComponent<PlayerMovement>();
         if (pm != null)
             pm.enabled = false;
 
-        // Destroy or handle Game Over after animation:
-        AnimatorClipInfo[] clips = anim.GetCurrentAnimatorClipInfo(0);
-        float dieLength = (clips.Length > 0) ? clips[0].clip.length : 0.5f;
-        StartCoroutine(DestroyAfterDelay(dieLength));
+        // 4) Destroy or handle Game Over after animation
+        if (anim != null)
+        {
+            AnimatorClipInfo[] clips = anim.GetCurrentAnimatorClipInfo(0);
+            float dieLength = (clips.Length > 0) ? clips[0].clip.length : 0.5f;
+            StartCoroutine(DestroyAfterDelay(dieLength));
+        }
+        else
+        {
+            // No animator: destroy immediately
+            Destroy(gameObject);
+        }
     }
 
     System.Collections.IEnumerator DestroyAfterDelay(float delay)
     {
         yield return new WaitForSeconds(delay);
-        // You could also load a Game Over scene instead of destroying:
         Destroy(gameObject);
     }
 }
