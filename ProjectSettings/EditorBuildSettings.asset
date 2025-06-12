@@ -20,4 +20,7 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/SignUp.unity
     guid: 1003ed7bc820a83408058487cb6f0411
+  - enabled: 1
+    path: Assets/Scenes/LevelComplete.unity
+    guid: bb2654c3004ef84409c53d73a2f9e655
   m_configObjects: {}
