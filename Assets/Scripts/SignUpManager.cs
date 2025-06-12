@@ -1,10 +1,12 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using TMPro;
+using System;
 
 public class SignUpManager : MonoBehaviour
 {
+    [Header("UI References")]
     public TMP_InputField Input_Username;
     public TMP_InputField Input_Password;
     public TMP_InputField Input_ConfirmPassword;
@@ -12,25 +14,30 @@ public class SignUpManager : MonoBehaviour
     public Button Btn_GoToSignIn;
     public TMP_Text Txt_SignUpMessage;
 
-    const string USER_PREF = "USER_";
-    const string PASS_PREF = "PASS_";
+    [Header("Scene Names")]
     public string SignInScene = "SignIn";
 
     void Start()
     {
+        // Clear any previous message
         Txt_SignUpMessage.text = "";
-        Btn_SignUp.onClick.AddListener(OnSignUp);
+
+        // Wire up button callbacks
+        Btn_SignUp.onClick.AddListener(OnSignUpClicked);
         Btn_GoToSignIn.onClick.AddListener(() =>
             SceneManager.LoadScene(SignInScene)
         );
     }
 
-    void OnSignUp()
+    void OnSignUpClicked()
     {
+        // Read and trim inputs
         string u = Input_Username.text.Trim();
         string p = Input_Password.text;
         string c = Input_ConfirmPassword.text;
-        if (u == "" || p == "" || c == "")
+
+        // Basic validation
+        if (string.IsNullOrEmpty(u) || string.IsNullOrEmpty(p) || string.IsNullOrEmpty(c))
         {
             Txt_SignUpMessage.text = "All fields are required.";
             return;
@@ -41,17 +48,27 @@ public class SignUpManager : MonoBehaviour
             return;
         }
 
-        string userKey = USER_PREF + u;
-        if (PlayerPrefs.HasKey(userKey))
+        // Disable the button to prevent double‐taps and show progress
+        Btn_SignUp.interactable = false;
+        Txt_SignUpMessage.text = "Creating account…";
+
+        // Call the NetworkManager to register
+        NetworkManager.Instance.Register(u, p, (success, message) =>
         {
-            Txt_SignUpMessage.text = "Username already exists.";
-            return;
-        }
+            // Re‐enable button and show server response
+            Btn_SignUp.interactable = true;
+            Txt_SignUpMessage.text = message;
 
-        PlayerPrefs.SetString(userKey, u);
-        PlayerPrefs.SetString(PASS_PREF + u, p);
-        PlayerPrefs.Save();
+            if (success)
+            {
+                // On success, go back to Sign In after a brief delay
+                Invoke(nameof(ReturnToSignIn), 1f);
+            }
+        });
+    }
 
-        Txt_SignUpMessage.text = "Account created! Return to Sign In.";
+    void ReturnToSignIn()
+    {
+        SceneManager.LoadScene(SignInScene);
     }
 }

@@ -2,58 +2,62 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using TMPro;
+using System; // for Action<>
 
 public class SignInManager : MonoBehaviour
 {
+    [Header("UI References")]
     public TMP_InputField Input_Username;
     public TMP_InputField Input_Password;
     public Button Btn_SignIn;
     public Button Btn_GoToSignUp;
     public TMP_Text Txt_SignInMessage;
 
-    const string USER_PREF = "USER_";
-    const string PASS_PREF = "PASS_";
+    [Header("Scene Names")]
     public string MainMenuScene = "MainMenu";
     public string SignUpScene = "SignUp";
 
     void Start()
     {
         Txt_SignInMessage.text = "";
-        Btn_SignIn.onClick.AddListener(OnSignIn);
+
+        Btn_SignIn.onClick.AddListener(OnSignInClicked);
         Btn_GoToSignUp.onClick.AddListener(() =>
             SceneManager.LoadScene(SignUpScene)
         );
     }
 
-    void OnSignIn()
+    void OnSignInClicked()
     {
         string u = Input_Username.text.Trim();
         string p = Input_Password.text;
-        if (u == "" || p == "")
+
+        if (string.IsNullOrEmpty(u) || string.IsNullOrEmpty(p))
         {
-            Txt_SignInMessage.text = "Please enter both fields.";
+            Txt_SignInMessage.text = "Please enter both username and password.";
             return;
         }
 
-        string userKey = USER_PREF + u;
-        string passKey = PASS_PREF + u;
-        if (!PlayerPrefs.HasKey(userKey))
-        {
-            Txt_SignInMessage.text = "User not found.";
-            return;
-        }
+        Txt_SignInMessage.text = "Signing in…";
 
-        if (PlayerPrefs.GetString(passKey) == p)
+        NetworkManager.Instance.Login(u, p, (success, message, userId) =>
         {
-            Txt_SignInMessage.text = "Success!";
-            // save current user if needed
-            PlayerPrefs.SetString("CURRENT_USER", u);
-            PlayerPrefs.Save();
-            SceneManager.LoadScene(MainMenuScene);
-        }
-        else
-        {
-            Txt_SignInMessage.text = "Incorrect password.";
-        }
+            // Note: this callback runs on Unity's main thread
+            if (success)
+            {
+                // Optionally store the userId for later API calls
+                PlayerPrefs.SetInt("USER_ID", userId);
+                PlayerPrefs.SetString("USERNAME", u);
+                PlayerPrefs.Save();
+
+                // Load your main menu
+                SceneManager.LoadScene(MainMenuScene);
+            }
+            else
+            {
+                // Show the error message returned by the server
+                Txt_SignInMessage.text = message;
+            }
+        });
     }
 }
