@@ -531,6 +531,8 @@ MonoBehaviour:
   Btn_SignIn: {fileID: 693719813}
   Btn_GoToSignUp: {fileID: 114611256}
   Txt_SignInMessage: {fileID: 325459352}
+  Txt_Status: {fileID: 0}
+  BaseUrl: http://localhost:3000
   MainMenuScene: MainMenu
   SignUpScene: SignUp
 --- !u!4 &593624992

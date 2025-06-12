@@ -157,7 +157,9 @@ MonoBehaviour:
   Btn_SignUp: {fileID: 1774913502}
   Btn_GoToSignIn: {fileID: 751828024}
   Txt_SignUpMessage: {fileID: 438997536}
+  Txt_Status: {fileID: 0}
   SignInScene: SignIn
+  BaseUrl: http://localhost:3000
 --- !u!4 &217450432
 Transform:
   m_ObjectHideFlags: 0
@@ -2531,13 +2533,13 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 217450430}
-        m_TargetAssemblyTypeName: 
-        m_MethodName: 
+      - m_Target: {fileID: 217450431}
+        m_TargetAssemblyTypeName: SignUpManager, Assembly-CSharp
+        m_MethodName: OnSignUpClicked
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: 
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
           m_IntArgument: 0
           m_FloatArgument: 0
           m_StringArgument: 

@@ -2,6 +2,7 @@
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using TMPro;
+using Proyecto26;       // RestClient + RequestException
 using System;
 
 public class SignUpManager : MonoBehaviour
@@ -11,32 +12,46 @@ public class SignUpManager : MonoBehaviour
     public TMP_InputField Input_Password;
     public TMP_InputField Input_ConfirmPassword;
     public Button Btn_SignUp;
-    public Button Btn_GoToSignIn;
+    public Button Btn_GoToSignIn;      // ← add this
     public TMP_Text Txt_SignUpMessage;
+    public TMP_Text Txt_Status;          // optional “Registering…”
 
-    [Header("Scene Names")]
+    [Header("Scenes & Server")]
     public string SignInScene = "SignIn";
+    public string BaseUrl = "http://localhost:3000";
+
+    [Serializable]
+    public class RegisterRequest
+    {
+        public string username;
+        public string password;
+    }
+
+    [Serializable]
+    public class RegisterResponse
+    {
+        public int id;
+        public string username;
+    }
 
     void Start()
     {
-        // Clear any previous message
+        // clear any old messages
         Txt_SignUpMessage.text = "";
+        if (Txt_Status) Txt_Status.text = "";
 
-        // Wire up button callbacks
+        // wire up both buttons
         Btn_SignUp.onClick.AddListener(OnSignUpClicked);
-        Btn_GoToSignIn.onClick.AddListener(() =>
-            SceneManager.LoadScene(SignInScene)
-        );
+        Btn_GoToSignIn.onClick.AddListener(OnGoToSignInClicked);
     }
 
-    void OnSignUpClicked()
+    public void OnSignUpClicked()
     {
-        // Read and trim inputs
         string u = Input_Username.text.Trim();
         string p = Input_Password.text;
         string c = Input_ConfirmPassword.text;
 
-        // Basic validation
+        // Validation
         if (string.IsNullOrEmpty(u) || string.IsNullOrEmpty(p) || string.IsNullOrEmpty(c))
         {
             Txt_SignUpMessage.text = "All fields are required.";
@@ -48,23 +63,43 @@ public class SignUpManager : MonoBehaviour
             return;
         }
 
-        // Disable the button to prevent double‐taps and show progress
-        Btn_SignUp.interactable = false;
-        Txt_SignUpMessage.text = "Creating account…";
+        // Show progress
+        if (Txt_Status) Txt_Status.text = "Registering…";
+        Txt_SignUpMessage.text = "";
 
-        // Call the NetworkManager to register
-        NetworkManager.Instance.Register(u, p, (success, message) =>
+        var payload = new RegisterRequest
         {
-            // Re‐enable button and show server response
-            Btn_SignUp.interactable = true;
-            Txt_SignUpMessage.text = message;
+            username = u,
+            password = p
+        };
 
-            if (success)
-            {
-                // On success, go back to Sign In after a brief delay
-                Invoke(nameof(ReturnToSignIn), 1f);
-            }
-        });
+        RestClient
+          .Post<RegisterResponse>($"{BaseUrl}/register", payload)
+          .Then(res =>
+          {
+              // Success
+              if (Txt_Status) Txt_Status.text = "";
+              Txt_SignUpMessage.text = $"Created user “{res.username}”!";
+
+              // after 1s, return to sign in
+              Invoke(nameof(ReturnToSignIn), 1f);
+          })
+          .Catch(err =>
+          {
+              // Error handling
+              if (Txt_Status) Txt_Status.text = "";
+              var reqErr = err as RequestException;
+              if (reqErr != null && reqErr.StatusCode == 409)
+                  Txt_SignUpMessage.text = "That username is already taken.";
+              else
+                  Txt_SignUpMessage.text = $"Error: {err.Message}";
+          });
+    }
+
+    // Called when the “Back to Sign In” button is pressed
+    void OnGoToSignInClicked()
+    {
+        SceneManager.LoadScene(SignInScene);
     }
 
     void ReturnToSignIn()
