@@ -16,22 +16,25 @@ public class LevelCompleteManager : MonoBehaviour
 
     void Start()
     {
-        // Read from PlayerPrefs (set earlier by LevelProgressionManager)
         int level = PlayerPrefs.GetInt("CURRENT_LEVEL", 1);
         float runPct = PlayerPrefs.GetFloat("RUN_PERCENT", 0f);
         float bestPct = PlayerPrefs.GetFloat("BEST_PERCENT", 0f);
 
-        if (Txt_LevelLabel != null)
+        // Only show “Level # Complete!” if the player actually got 100 %
+        if (runPct >= 100f)
+        {
             Txt_LevelLabel.text = $"Level {level} Complete!";
+        }
+        else
+        {
+            Txt_LevelLabel.text = "You Died";
+        }
 
-        if (Txt_RunPercent != null)
-            Txt_RunPercent.text = $"This run: {runPct:F1}%";
+        // Always show the run % and best % beneath
+        Txt_RunPercent.text = $"This run: {runPct:F1}%";
+        Txt_BestPercent.text = $"Your best: {bestPct:F1}%";
 
-        if (Txt_BestPercent != null)
-            Txt_BestPercent.text = $"Your best: {bestPct:F1}%";
-
-        if (Btn_Continue != null)
-            Btn_Continue.onClick.AddListener(OnContinueClicked);
+        Btn_Continue.onClick.AddListener(OnContinueClicked);
     }
 
     void OnContinueClicked()
